@@ -127,7 +127,7 @@ document.addEventListener("DOMContentLoaded", function () {
       return {
         success: false,
         text: "",
-        error: "Invalid BLOB data."
+        error:String[error]
       };
 
     }
