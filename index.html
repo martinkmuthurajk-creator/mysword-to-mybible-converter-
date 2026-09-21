@@ -1,1 +1,202 @@
- 
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>MySword → MyBible Converter</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      text-align: center;
+      color: #1d4ed8;
+      font-size: 25px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #64748b;
+      margin-bottom: 25px;
+    }
+
+    .section {
+      margin-top: 20px;
+      padding: 18px;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+    }
+
+    h2 {
+      font-size: 18px;
+      color: #334155;
+    }
+
+    label {
+      display: block;
+      margin: 12px 0 8px;
+      font-weight: bold;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    #inspectionResult {
+      margin-top: 20px;
+      padding: 15px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: monospace;
+      font-size: 13px;
+      min-height: 80px;
+    }
+
+    .footer {
+      margin-top: 25px;
+      text-align: center;
+      color: #64748b;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <h1>MySword → MyBible Converter</h1>
+
+    <p class="subtitle">
+      Professional Bible Commentary Database Conversion Tool
+    </p>
+
+    <div class="section">
+
+      <h2>1. MySword Source Database</h2>
+
+      <label for="sourceFile">
+        Select MySword Commentary File
+      </label>
+
+      <input
+        type="file"
+        id="sourceFile"
+        accept=".twm,.sqlite,.sqlite3,.db"
+      >
+
+      <div id="sourceStatus" class="status">
+        No source file selected.
+      </div>
+
+    </div>
+
+    <div class="section">
+
+      <h2>2. MyBible Target Database</h2>
+
+      <label for="targetFile">
+        Select MyBible Commentary File
+      </label>
+
+      <input
+        type="file"
+        id="targetFile"
+        accept=".sqlite,.sqlite3,.db"
+      >
+
+      <div id="targetStatus" class="status">
+        No target file selected.
+      </div>
+
+    </div>
+
+    <button id="inspectButton">
+      Inspect Database
+    </button>
+
+    <div class="section">
+
+      <h2>Database Inspection Result</h2>
+
+      <div id="inspectionResult">
+        Select a MySword database and click Inspect Database.
+      </div>
+
+    </div>
+
+    <div class="footer">
+      MySword → MyBible Converter<br>
+      Bible Commentary Database Tool
+    </div>
+
+  </div>
+
+  <!-- SQLite Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+
+  <!-- Application Script -->
+  <script src="app.js"></script>
+
+</body>
+</html>
