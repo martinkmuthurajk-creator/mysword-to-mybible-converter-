@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
- <title>MySword to MyBible Converter - Version 2</title>
+  <title>MySword to MyBible Converter - Version 2</title>
 
   <style>
     * {
@@ -33,7 +33,6 @@
 
     header p {
       margin: 0;
-      opacity: 0.9;
     }
 
     .container {
@@ -47,7 +46,7 @@
       padding: 25px;
       margin-bottom: 20px;
       border-radius: 16px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
     }
 
     h2 {
@@ -81,8 +80,9 @@
       cursor: pointer;
     }
 
-    button:hover {
-      background: #1d4ed8;
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
     }
 
     .status {
@@ -91,6 +91,17 @@
       border-radius: 8px;
       color: #1e40af;
       margin-top: 15px;
+      white-space: pre-wrap;
+    }
+
+    #inspectionResult {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     footer {
@@ -160,13 +171,14 @@
       <h2>⚙️ Database Inspection</h2>
 
       <p>
-        Database inspection and conversion engine
-        will be added in the next development phase.
+        Inspect SQLite database tables and structure.
       </p>
 
       <button id="inspectButton" disabled>
         Inspect Database
-      </button><div id="inspectionResult" hidden></div>
+      </button>
+
+      <div id="inspectionResult" hidden></div>
     </section>
 
   </main>
@@ -175,6 +187,8 @@
     MySword → MyBible Converter | Development Version
   </footer>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+
   <script>
     const sourceFile = document.getElementById("sourceFile");
     const targetFile = document.getElementById("targetFile");
@@ -182,16 +196,35 @@
     const sourceStatus = document.getElementById("sourceStatus");
     const targetStatus = document.getElementById("targetStatus");
 
-    sourceFile.addEventListener("change", function () {
+    const inspectButton = document.getElementById("inspectButton");
+    const result = document.getElementById("inspectionResult");
+
+    let SQL;
+
+    initSqlJs({
+      locateFile: file =>
+        "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file
+    }).then(sqlModule => {
+      SQL = sqlModule;
+    }).catch(error => {
+      result.hidden = false;
+      result.textContent =
+        "SQLite library loading error: " + error.message;
+    });
+
+    sourceFile.addEventListener("change", () => {
       if (sourceFile.files.length > 0) {
         sourceStatus.textContent =
           "Selected: " + sourceFile.files[0].name;
+
+        inspectButton.disabled = false;
       } else {
         sourceStatus.textContent = "No file selected.";
+        inspectButton.disabled = true;
       }
     });
 
-    targetFile.addEventListener("change", function () {
+    targetFile.addEventListener("change", () => {
       if (targetFile.files.length > 0) {
         targetStatus.textContent =
           "Selected: " + targetFile.files[0].name;
@@ -199,8 +232,53 @@
         targetStatus.textContent = "No target file selected.";
       }
     });
+
+    inspectButton.addEventListener("click", async () => {
+      if (!sourceFile.files.length) return;
+
+      if (!SQL) {
+        result.hidden = false;
+        result.textContent = "SQLite library is still loading. Try again.";
+        return;
+      }
+
+      result.hidden = false;
+      result.textContent = "Reading database...";
+
+      try {
+        const buffer =
+          await sourceFile.files[0].arrayBuffer();
+
+        const database = new SQL.Database(
+          new Uint8Array(buffer)
+        );
+
+        const tables = database.exec(
+          "SELECT name FROM sqlite_master " +
+          "WHERE type='table' ORDER BY name"
+        );
+
+        if (!tables.length) {
+          result.textContent = "No tables found.";
+          return;
+        }
+
+        let output = "Tables found:\n\n";
+
+        tables[0].values.forEach(row => {
+          output += "• " + row[0] + "\n";
+        });
+
+        result.textContent = output;
+
+        database.close();
+
+      } catch (error) {
+        result.textContent =
+          "Database Error: " + error.message;
+      }
+    });
   </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-<script src="app.js"></script>
+
 </body>
 </html>
