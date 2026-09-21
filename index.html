@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>MySword to MyBible Converter - Version 2</title>
+  <title>MySword to MyBible Converter - Version 3</title>
 
   <style>
     * {
@@ -36,7 +36,7 @@
     }
 
     .container {
-      max-width: 700px;
+      max-width: 750px;
       margin: 30px auto;
       padding: 0 18px;
     }
@@ -92,6 +92,7 @@
       color: #1e40af;
       margin-top: 15px;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     #inspectionResult {
@@ -102,6 +103,17 @@
       border-radius: 8px;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      line-height: 1.6;
+    }
+
+    .success {
+      color: #166534;
+      background: #f0fdf4;
+    }
+
+    .error {
+      color: #991b1b;
+      background: #fef2f2;
     }
 
     footer {
@@ -132,7 +144,7 @@
   <main class="container">
 
     <section class="card">
-      <h2>📁 Select MySword File</h2>
+      <h2>📁 MySword Source File</h2>
 
       <label for="sourceFile">
         MySword Commentary Database
@@ -153,7 +165,7 @@
       <h2>🗄️ MyBible Target File</h2>
 
       <label for="targetFile">
-        MyBible SQLite3 Database (Optional)
+        MyBible SQLite3 Database
       </label>
 
       <input
@@ -171,11 +183,11 @@
       <h2>⚙️ Database Inspection</h2>
 
       <p>
-        Inspect SQLite database tables and structure.
+        Inspect tables, columns, and database structure.
       </p>
 
       <button id="inspectButton" disabled>
-        Inspect Database
+        Inspect Both Databases
       </button>
 
       <div id="inspectionResult" hidden></div>
@@ -187,6 +199,7 @@
     MySword → MyBible Converter | Development Version
   </footer>
 
+  <!-- SQLite Library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 
   <script>
@@ -199,32 +212,45 @@
     const inspectButton = document.getElementById("inspectButton");
     const result = document.getElementById("inspectionResult");
 
-    let SQL;
+    let SQL = null;
 
+    // Load SQLite library
     initSqlJs({
-      locateFile: file =>
-        "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file
-    }).then(sqlModule => {
+      locateFile: function(file) {
+        return "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file;
+      }
+    })
+    .then(function(sqlModule) {
       SQL = sqlModule;
-    }).catch(error => {
+      updateButtonState();
+    })
+    .catch(function(error) {
       result.hidden = false;
+      result.className = "error";
       result.textContent =
-        "SQLite library loading error: " + error.message;
+        "SQLite library loading error:\n" + error.message;
     });
 
-    sourceFile.addEventListener("change", () => {
+    // Update button state
+    function updateButtonState() {
+      inspectButton.disabled =
+        !SQL || !sourceFile.files.length;
+    }
+
+    // Source file selection
+    sourceFile.addEventListener("change", function() {
       if (sourceFile.files.length > 0) {
         sourceStatus.textContent =
           "Selected: " + sourceFile.files[0].name;
-
-        inspectButton.disabled = false;
       } else {
         sourceStatus.textContent = "No file selected.";
-        inspectButton.disabled = true;
       }
+
+      updateButtonState();
     });
 
-    targetFile.addEventListener("change", () => {
+    // Target file selection
+    targetFile.addEventListener("change", function() {
       if (targetFile.files.length > 0) {
         targetStatus.textContent =
           "Selected: " + targetFile.files[0].name;
@@ -233,49 +259,131 @@
       }
     });
 
-    inspectButton.addEventListener("click", async () => {
-      if (!sourceFile.files.length) return;
+    // Inspect database structure
+    function inspectDatabase(file) {
+      return new Promise(async function(resolve, reject) {
+        try {
+          const buffer = await file.arrayBuffer();
+
+          const database = new SQL.Database(
+            new Uint8Array(buffer)
+          );
+
+          const tables = database.exec(
+            "SELECT name FROM sqlite_master " +
+            "WHERE type='table' " +
+            "AND name NOT LIKE 'sqlite_%' " +
+            "ORDER BY name"
+          );
+
+          let output = "";
+          output += "FILE: " + file.name + "\n";
+          output += "================================\n\n";
+
+          if (!tables.length) {
+            output += "No tables found.\n";
+            database.close();
+            resolve(output);
+            return;
+          }
+
+          tables[0].values.forEach(function(row) {
+            const tableName = row[0];
+
+            output += "TABLE: " + tableName + "\n";
+            output += "--------------------------------\n";
+
+            const schema = database.exec(
+              "PRAGMA table_info('" +
+              tableName.replace(/'/g, "''") +
+              "')"
+            );
+
+            if (schema.length) {
+              schema[0].values.forEach(function(column) {
+                const columnId = column[0];
+                const columnName = column[1];
+                const columnType = column[2];
+                const notNull = column[3];
+                const defaultValue = column[4];
+                const primaryKey = column[5];
+
+                output +=
+                  "Column: " + columnName + "\n" +
+                  "Type: " + (columnType || "UNKNOWN") + "\n" +
+                  "Not Null: " + notNull + "\n" +
+                  "Default: " + (defaultValue ?? "NULL") + "\n" +
+                  "Primary Key: " + primaryKey + "\n\n";
+              });
+            }
+
+            output += "\n";
+          });
+
+          database.close();
+          resolve(output);
+
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+
+    // Inspect button
+    inspectButton.addEventListener("click", async function() {
+      if (!sourceFile.files.length) {
+        result.hidden = false;
+        result.className = "error";
+        result.textContent = "Please select a MySword file.";
+        return;
+      }
 
       if (!SQL) {
         result.hidden = false;
-        result.textContent = "SQLite library is still loading. Try again.";
+        result.className = "error";
+        result.textContent =
+          "SQLite library is still loading. Please try again.";
         return;
       }
 
       result.hidden = false;
-      result.textContent = "Reading database...";
+      result.className = "";
+      result.textContent = "Inspecting database structures...";
 
       try {
-        const buffer =
-          await sourceFile.files[0].arrayBuffer();
+        let finalOutput = "";
 
-        const database = new SQL.Database(
-          new Uint8Array(buffer)
+        // Inspect MySword file
+        finalOutput += "===== MYSWORD DATABASE =====\n\n";
+
+        const sourceOutput = await inspectDatabase(
+          sourceFile.files[0]
         );
 
-        const tables = database.exec(
-          "SELECT name FROM sqlite_master " +
-          "WHERE type='table' ORDER BY name"
-        );
+        finalOutput += sourceOutput;
 
-        if (!tables.length) {
-          result.textContent = "No tables found.";
-          return;
+        // Inspect MyBible file if selected
+        if (targetFile.files.length > 0) {
+          finalOutput +=
+            "\n\n===== MYBIBLE DATABASE =====\n\n";
+
+          const targetOutput = await inspectDatabase(
+            targetFile.files[0]
+          );
+
+          finalOutput += targetOutput;
+        } else {
+          finalOutput +=
+            "\n\nMyBible target file was not selected.";
         }
 
-        let output = "Tables found:\n\n";
-
-        tables[0].values.forEach(row => {
-          output += "• " + row[0] + "\n";
-        });
-
-        result.textContent = output;
-
-        database.close();
+        result.className = "success";
+        result.textContent = finalOutput;
 
       } catch (error) {
+        result.className = "error";
         result.textContent =
-          "Database Error: " + error.message;
+          "Database Inspection Error:\n" + error.message;
       }
     });
   </script>
