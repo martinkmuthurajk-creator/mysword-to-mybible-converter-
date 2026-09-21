@@ -13,9 +13,18 @@ document.addEventListener("DOMContentLoaded", function () {
   let SQL = null;
   let pakoLoaded = false;
 
+  // -----------------------------------------
+  // ERROR MESSAGE
+  // -----------------------------------------
+
   function getErrorMessage(error) {
+
+    if (!error) {
+      return "Unknown error (no error details returned).";
+    }
+
     if (error instanceof Error) {
-      return error.message || String(error);
+      return error.message || error.toString();
     }
 
     if (typeof error === "string") {
@@ -27,25 +36,38 @@ document.addEventListener("DOMContentLoaded", function () {
     } catch (e) {
       return String(error);
     }
+
   }
 
+  // -----------------------------------------
+  // LOAD EXTERNAL SCRIPT
+  // -----------------------------------------
+
   function loadScript(url) {
+
     return new Promise(function (resolve, reject) {
 
       const script = document.createElement("script");
 
       script.src = url;
 
-      script.onload = resolve;
+      script.onload = function () {
+        resolve();
+      };
 
       script.onerror = function () {
-        reject(new Error("Failed to load: " + url));
+        reject(new Error("Failed to load script: " + url));
       };
 
       document.head.appendChild(script);
 
     });
+
   }
+
+  // -----------------------------------------
+  // INITIALIZE LIBRARIES
+  // -----------------------------------------
 
   async function initialize() {
 
@@ -58,7 +80,12 @@ document.addEventListener("DOMContentLoaded", function () {
       SQL = await initSqlJs({
 
         locateFile: function (file) {
-          return "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file;
+
+          return (
+            "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" +
+            file
+          );
+
         }
 
       });
@@ -71,18 +98,19 @@ document.addEventListener("DOMContentLoaded", function () {
         typeof window.pako !== "undefined";
 
       if (!pakoLoaded) {
-        throw new Error("Pako library failed to load.");
+        throw new Error("Pako compression library not available.");
       }
 
       result.textContent =
-        "SQLite and compression library loaded successfully.";
+        "SQLite and Pako libraries loaded successfully.\n" +
+        "Please select a MySword file.";
 
       updateButton();
 
     } catch (error) {
 
       result.textContent =
-        "Initialization Error:\n" +
+        "INITIALIZATION ERROR:\n\n" +
         getErrorMessage(error);
 
       console.error(error);
@@ -93,6 +121,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   initialize();
 
+  // -----------------------------------------
+  // BUTTON STATE
+  // -----------------------------------------
+
   function updateButton() {
 
     inspectButton.disabled =
@@ -100,12 +132,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
   }
 
+  // -----------------------------------------
+  // FILE SELECTION
+  // -----------------------------------------
+
   sourceFile.addEventListener("change", function () {
 
     sourceStatus.textContent =
       sourceFile.files.length
         ? "Selected: " + sourceFile.files[0].name
-        : "No file selected.";
+        : "No source file selected.";
 
     updateButton();
 
@@ -120,31 +156,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   });
 
-  function toHex(bytes, limit = 32) {
-
-    return Array.from(bytes.slice(0, limit))
-      .map(function (byte) {
-        return byte.toString(16).padStart(2, "0");
-      })
-      .join(" ");
-
-  }
-
-  function decodeUtf8(bytes) {
-
-    try {
-
-      return new TextDecoder("utf-8", {
-        fatal: false
-      }).decode(bytes);
-
-    } catch (error) {
-
-      return "";
-
-    }
-
-  }
+  // -----------------------------------------
+  // BYTE UTILITIES
+  // -----------------------------------------
 
   function getBytes(value) {
 
@@ -170,61 +184,187 @@ document.addEventListener("DOMContentLoaded", function () {
 
   }
 
-  function decompressBlob(value) {
+  function toHex(bytes, limit = 32) {
 
-    const bytes = getBytes(value);
+    return Array.from(bytes.slice(0, limit))
+      .map(function (byte) {
 
-    if (!bytes) {
+        return byte.toString(16).padStart(2, "0");
 
-      return {
-        success: false,
-        text: "",
-        error: "Invalid BLOB data."
-      };
+      })
+      .join(" ");
 
+  }
+
+  function getSignature(bytes) {
+
+    if (!bytes || bytes.length < 2) {
+      return "Not enough bytes";
     }
 
-    if (!bytes.length) {
+    const first = bytes[0];
+    const second = bytes[1];
 
-      return {
-        success: false,
-        text: "",
-        error: "BLOB is empty."
-      };
-
+    if (first === 0x78 && second === 0x01) {
+      return "Possible ZLIB stream (78 01)";
     }
+
+    if (first === 0x78 && second === 0x5e) {
+      return "Possible ZLIB stream (78 5E)";
+    }
+
+    if (first === 0x78 && second === 0x9c) {
+      return "Possible ZLIB stream (78 9C)";
+    }
+
+    if (first === 0x78 && second === 0xda) {
+      return "Possible ZLIB stream (78 DA)";
+    }
+
+    if (first === 0x1f && second === 0x8b) {
+      return "Possible GZIP stream";
+    }
+
+    return "Unknown or custom format";
+
+  }
+
+  function decodeText(bytes) {
 
     try {
 
-      const decompressed =
-        window.pako.inflate(bytes);
-
-      const text =
-        decodeUtf8(decompressed)
-          .replace(/\0/g, "")
-          .trim();
-
-      return {
-
-        success: true,
-        text: text,
-        size: decompressed.length
-
-      };
+      return new TextDecoder("utf-8", {
+        fatal: false
+      }).decode(bytes);
 
     } catch (error) {
 
-      return {
-
-        success: false,
-        text: "",
-        error: getErrorMessage(error)
-
-      };
+      return "";
 
     }
 
   }
+
+  function cleanText(text) {
+
+    return text
+      .replace(/\0/g, "")
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g, " ")
+      .trim();
+
+  }
+
+  // -----------------------------------------
+  // DECOMPRESSION TEST
+  // -----------------------------------------
+
+  function tryDecompression(bytes) {
+
+    const attempts = [];
+
+    const methods = [
+      {
+        name: "ZLIB",
+        options: {}
+      },
+      {
+        name: "GZIP",
+        options: {
+          windowBits: 31
+        }
+      },
+      {
+        name: "RAW DEFLATE",
+        options: {
+          windowBits: -15
+        }
+      }
+    ];
+
+    for (const method of methods) {
+
+      try {
+
+        const output =
+          window.pako.inflate(bytes, method.options);
+
+        const text =
+          cleanText(decodeText(output));
+
+        attempts.push({
+          method: method.name,
+          success: true,
+          size: output.length,
+          text: text
+        });
+
+      } catch (error) {
+
+        attempts.push({
+          method: method.name,
+          success: false,
+          error: getErrorMessage(error)
+        });
+
+      }
+
+    }
+
+    return attempts;
+
+  }
+
+  // -----------------------------------------
+  // FORMAT REPORT
+  // -----------------------------------------
+
+  function formatDecompressionReport(bytes) {
+
+    const output = [];
+
+    output.push("BYTE SIGNATURE:");
+    output.push(getSignature(bytes));
+    output.push("");
+
+    output.push("DECOMPRESSION ATTEMPTS:");
+    output.push("");
+
+    const attempts =
+      tryDecompression(bytes);
+
+    attempts.forEach(function (attempt) {
+
+      output.push("METHOD: " + attempt.method);
+
+      if (attempt.success) {
+
+        output.push("STATUS: SUCCESS");
+        output.push("OUTPUT SIZE: " + attempt.size + " bytes");
+        output.push("TEXT PREVIEW:");
+
+        output.push(
+          attempt.text.slice(0, 1500) ||
+          "[No readable text]"
+        );
+
+      } else {
+
+        output.push("STATUS: FAILED");
+        output.push("ERROR: " + attempt.error);
+
+      }
+
+      output.push("");
+
+    });
+
+    return output;
+
+  }
+
+  // -----------------------------------------
+  // TABLE NAMES
+  // -----------------------------------------
 
   function getTables(database) {
 
@@ -249,11 +389,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
   }
 
+  // -----------------------------------------
+  // DATABASE INSPECTION
+  // -----------------------------------------
+
   function inspectDatabase(database) {
 
     const output = [];
 
-    output.push("===== MYSWORD BLOB DECOMPRESSION =====");
+    output.push("===== MYSWORD BLOB FORMAT INSPECTION =====");
     output.push("");
 
     output.push("TABLES:");
@@ -321,14 +465,18 @@ document.addEventListener("DOMContentLoaded", function () {
       output.push("CONTENT TYPE: " + contentType);
       output.push("");
 
+      // -------------------------------------
+      // DATA BLOB
+      // -------------------------------------
+
       output.push("DATA:");
 
       const dataBytes = getBytes(data);
 
-      if (dataBytes) {
+      if (dataBytes && dataBytes.length > 0) {
 
         output.push(
-          "Compressed Size: " +
+          "SIZE: " +
           dataBytes.length +
           " bytes"
         );
@@ -338,40 +486,24 @@ document.addEventListener("DOMContentLoaded", function () {
           toHex(dataBytes)
         );
 
-        const decompressed =
-          decompressBlob(dataBytes);
+        output.push("");
 
-        if (decompressed.success) {
+        const report =
+          formatDecompressionReport(dataBytes);
 
-          output.push(
-            "Decompressed Size: " +
-            decompressed.size +
-            " bytes"
-          );
-
-          output.push("TEXT:");
-
-          output.push(
-            decompressed.text.slice(0, 1000) ||
-            "[No readable text]"
-          );
-
-        } else {
-
-          output.push(
-            "Decompression Failed: " +
-            decompressed.error
-          );
-
-        }
+        report.forEach(function (line) {
+          output.push(line);
+        });
 
       } else {
 
-        output.push("DATA is NULL or invalid.");
+        output.push("DATA is NULL or empty.");
 
       }
 
-      output.push("");
+      // -------------------------------------
+      // DATA2 BLOB
+      // -------------------------------------
 
       output.push("DATA2:");
 
@@ -380,31 +512,24 @@ document.addEventListener("DOMContentLoaded", function () {
       if (data2Bytes && data2Bytes.length > 0) {
 
         output.push(
-          "Size: " +
+          "SIZE: " +
           data2Bytes.length +
           " bytes"
         );
 
-        const decompressed2 =
-          decompressBlob(data2Bytes);
+        output.push(
+          "HEX: " +
+          toHex(data2Bytes)
+        );
 
-        if (decompressed2.success) {
+        output.push("");
 
-          output.push("TEXT:");
+        const report2 =
+          formatDecompressionReport(data2Bytes);
 
-          output.push(
-            decompressed2.text.slice(0, 1000) ||
-            "[No readable text]"
-          );
-
-        } else {
-
-          output.push(
-            "Decompression Failed: " +
-            decompressed2.error
-          );
-
-        }
+        report2.forEach(function (line) {
+          output.push(line);
+        });
 
       } else {
 
@@ -420,6 +545,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   }
 
+  // -----------------------------------------
+  // INSPECT BUTTON
+  // -----------------------------------------
+
   inspectButton.addEventListener("click", async function () {
 
     if (!SQL) {
@@ -434,7 +563,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!pakoLoaded) {
 
       result.textContent =
-        "Compression library is not loaded.";
+        "Pako library is not loaded.";
 
       return;
 
@@ -450,7 +579,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     result.textContent =
-      "Inspecting BLOB data. Please wait...";
+      "Inspecting compression formats. Please wait...";
 
     try {
 
@@ -474,7 +603,7 @@ document.addEventListener("DOMContentLoaded", function () {
     } catch (error) {
 
       result.textContent =
-        "Inspection Error:\n" +
+        "INSPECTION ERROR:\n\n" +
         getErrorMessage(error);
 
       console.error(error);
