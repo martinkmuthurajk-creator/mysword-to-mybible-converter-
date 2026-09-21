@@ -1,325 +1,121 @@
 
 "use strict";
 
-document.addEventListener("DOMContentLoaded", () => {
-  const sourceFile = document.getElementById("sourceFile");
-  const targetFile = document.getElementById("targetFile");
-  const sourceStatus = document.getElementById("sourceStatus");
-  const targetStatus = document.getElementById("targetStatus");
-  const inspectButton = document.getElementById("inspectButton");
-  const result = document.getElementById("inspectionResult");
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
 
-  let SQL = null;
-  let sourceDatabase = null;
-  let targetDatabase = null;
-  let sourceSchema = [];
-  let targetSchema = [];
+    const sourceFile = document.getElementById("sourceFile");
+    const targetFile = document.getElementById("targetFile");
+    const sourceStatus = document.getElementById("sourceStatus");
+    const targetStatus = document.getElementById("targetStatus");
+    const inspectButton = document.getElementById("inspectButton");
+    const result = document.getElementById("inspectionResult");
 
-  if (!sourceFile || !targetFile || !inspectButton || !result) {
-    console.error("Required HTML elements are missing.");
-    return;
-  }
-
-  // Load SQLite engine
-  if (typeof initSqlJs !== "function") {
-    result.hidden = false;
-    result.textContent =
-      "Error: SQLite library was not loaded.";
-    return;
-  }
-
-  initSqlJs({
-    locateFile: (file) =>
-      "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file
-  })
-    .then((sqlModule) => {
-      SQL = sqlModule;
-      inspectButton.disabled = !sourceFile.files.length;
-    })
-    .catch((error) => {
-      result.hidden = false;
-      result.textContent =
-        "SQLite loading error: " + error.message;
-    });
-
-  // Source file selection
-  sourceFile.addEventListener("change", () => {
-    if (sourceFile.files.length > 0) {
-      sourceStatus.textContent =
-        "Selected: " + sourceFile.files[0].name;
-      inspectButton.disabled = !SQL;
-    } else {
-      sourceStatus.textContent = "No file selected.";
-      inspectButton.disabled = true;
-    }
-  });
-
-  // Target file selection
-  targetFile.addEventListener("change", () => {
-    if (targetFile.files.length > 0) {
-      targetStatus.textContent =
-        "Selected: " + targetFile.files[0].name;
-    } else {
-      targetStatus.textContent = "No target file selected.";
-    }
-  });
-
-  // Read database schema
-  function readSchema(database) {
-    const tables = database.exec(`
-      SELECT name
-      FROM sqlite_master
-      WHERE type = 'table'
-      AND name NOT LIKE 'sqlite_%'
-      ORDER BY name
-    `);
-
-    const schema = [];
-
-    if (!tables.length) {
-      return schema;
+    if (
+      !sourceFile ||
+      !targetFile ||
+      !sourceStatus ||
+      !targetStatus ||
+      !inspectButton ||
+      !result
+    ) {
+      console.error("Required HTML elements were not found.");
+      return;
     }
 
-    const tableNames = tables[0].values;
+    let SQL = null;
+    let sourceDatabase = null;
+    let targetDatabase = null;
 
-    tableNames.forEach((row) => {
-      const tableName = row[0];
+    let sourceSchema = [];
+    let targetSchema = [];
 
-      const escapedName = tableName.replace(/"/g, '""');
+    // ------------------------------------
+    // INITIALIZE SQLITE LIBRARY
+    // ------------------------------------
 
-      const columns = database.exec(
-        `PRAGMA table_info("${escapedName}")`
-      );
+    function initializeSQLite() {
 
-      const columnList = [];
-
-      if (columns.length) {
-        columns[0].values.forEach((column) => {
-          columnList.push({
-            cid: column[0],
-            name: column[1],
-            type: column[2],
-            notnull: column[3],
-            defaultValue: column[4],
-            primaryKey: column[5]
-          });
-        });
-      }
-
-      schema.push({
-        name: tableName,
-        columns: columnList
-      });
-    });
-
-    return schema;
-  }
-
-  // Format schema output
-  function formatSchema(schema, title) {
-    let output = `\n===== ${title} =====\n\n`;
-
-    if (!schema.length) {
-      return output + "No tables found.\n";
-    }
-
-    schema.forEach((table) => {
-      output += `TABLE: ${table.name}\n`;
-      output += "-".repeat(40) + "\n";
-
-      table.columns.forEach((column) => {
-        output += `Column: ${column.name}\n`;
-        output += `Type: ${column.type || "UNKNOWN"}\n`;
-        output += `Not Null: ${column.notnull}\n`;
-        output += `Primary Key: ${column.primaryKey}\n`;
-        output += `Default: ${
-          column.defaultValue === null
-            ? "NULL"
-            : column.defaultValue
-        }\n`;
-        output += "\n";
-      });
-
-      output += "\n";
-    });
-
-    return output;
-  }
-
-  // Find content-related tables
-  function findContentTables(schema) {
-    const keywords = [
-      "content",
-      "comment",
-      "commentary",
-      "text",
-      "topic",
-      "verse"
-    ];
-
-    return schema.filter((table) => {
-      const tableName = table.name.toLowerCase();
-
-      return keywords.some((keyword) =>
-        tableName.includes(keyword)
-      );
-    });
-  }
-
-  // Create mapping interface
-  function createMappingInterface() {
-    const oldMapping = document.getElementById("mappingArea");
-
-    if (oldMapping) {
-      oldMapping.remove();
-    }
-
-    const area = document.createElement("div");
-    area.id = "mappingArea";
-
-    area.style.marginTop = "20px";
-    area.style.padding = "18px";
-    area.style.background = "#eff6ff";
-    area.style.border = "1px solid #93c5fd";
-    area.style.borderRadius = "10px";
-
-    const heading = document.createElement("h3");
-    heading.textContent = "Column Mapping";
-    heading.style.color = "#1e3a8a";
-
-    area.appendChild(heading);
-
-    const description = document.createElement("p");
-    description.textContent =
-      "Select a MySword table and a MyBible target table for mapping.";
-
-    area.appendChild(description);
-
-    // Source table selector
-    const sourceLabel = document.createElement("label");
-    sourceLabel.textContent = "MySword Source Table";
-
-    const sourceSelect = document.createElement("select");
-    sourceSelect.id = "sourceTableSelect";
-    sourceSelect.style.width = "100%";
-    sourceSelect.style.padding = "12px";
-    sourceSelect.style.marginBottom = "15px";
-
-    sourceSchema.forEach((table) => {
-      const option = document.createElement("option");
-      option.value = table.name;
-      option.textContent = table.name;
-      sourceSelect.appendChild(option);
-    });
-
-    area.appendChild(sourceLabel);
-    area.appendChild(sourceSelect);
-
-    // Target table selector
-    const targetLabel = document.createElement("label");
-    targetLabel.textContent = "MyBible Target Table";
-
-    const targetSelect = document.createElement("select");
-    targetSelect.id = "targetTableSelect";
-    targetSelect.style.width = "100%";
-    targetSelect.style.padding = "12px";
-    targetSelect.style.marginBottom = "15px";
-
-    targetSchema.forEach((table) => {
-      const option = document.createElement("option");
-      option.value = table.name;
-      option.textContent = table.name;
-      targetSelect.appendChild(option);
-    });
-
-    area.appendChild(targetLabel);
-    area.appendChild(targetSelect);
-
-    // Mapping result
-    const mappingResult = document.createElement("pre");
-    mappingResult.id = "mappingResult";
-    mappingResult.style.whiteSpace = "pre-wrap";
-    mappingResult.style.background = "#ffffff";
-    mappingResult.style.padding = "12px";
-    mappingResult.style.borderRadius = "8px";
-
-    area.appendChild(mappingResult);
-
-    function showMapping() {
-      const sourceTable = sourceSchema.find(
-        (table) => table.name === sourceSelect.value
-      );
-
-      const targetTable = targetSchema.find(
-        (table) => table.name === targetSelect.value
-      );
-
-      if (!sourceTable || !targetTable) {
-        mappingResult.textContent =
-          "Select valid source and target tables.";
+      if (typeof initSqlJs !== "function") {
+        result.hidden = false;
+        result.textContent =
+          "Error: SQLite library not loaded.\n" +
+          "Please check the sql.js CDN link.";
         return;
       }
 
-      let output = "SOURCE COLUMNS\n\n";
-
-      sourceTable.columns.forEach((column) => {
-        output += `${column.name} (${column.type})\n`;
-      });
-
-      output += "\nTARGET COLUMNS\n\n";
-
-      targetTable.columns.forEach((column) => {
-        output += `${column.name} (${column.type})\n`;
-      });
-
-      output += "\nSUGGESTED MATCHES\n\n";
-
-      sourceTable.columns.forEach((sourceColumn) => {
-        const sourceName = sourceColumn.name.toLowerCase();
-
-        const match = targetTable.columns.find(
-          (targetColumn) =>
-            targetColumn.name.toLowerCase() === sourceName
-        );
-
-        if (match) {
-          output += `${sourceColumn.name} → ${match.name}\n`;
-        } else {
-          output += `${sourceColumn.name} → No automatic match\n`;
+      initSqlJs({
+        locateFile: function (file) {
+          return (
+            "https://cdnjs.cloudflare.com/ajax/libs/" +
+            "sql.js/1.10.3/" + file
+          );
         }
-      });
+      })
+        .then(function (sqlModule) {
+          SQL = sqlModule;
 
-      mappingResult.textContent = output;
+          if (sourceFile.files.length > 0) {
+            inspectButton.disabled = false;
+          }
+
+          console.log("SQLite initialized successfully.");
+        })
+        .catch(function (error) {
+          result.hidden = false;
+          result.textContent =
+            "SQLite Loading Error:\n" + error.message;
+        });
     }
 
-    sourceSelect.addEventListener("change", showMapping);
-    targetSelect.addEventListener("change", showMapping);
+    initializeSQLite();
 
-    result.parentNode.appendChild(area);
+    // ------------------------------------
+    // SOURCE FILE SELECTION
+    // ------------------------------------
 
-    showMapping();
-  }
+    sourceFile.addEventListener("change", function () {
 
-  // Inspect both databases
-  inspectButton.addEventListener("click", async () => {
-    if (!SQL) {
-      result.hidden = false;
-      result.textContent =
-        "SQLite is still loading. Please try again.";
-      return;
-    }
+      if (sourceFile.files.length > 0) {
 
-    if (!sourceFile.files.length) {
-      result.hidden = false;
-      result.textContent =
-        "Please select a MySword database first.";
-      return;
-    }
+        sourceStatus.textContent =
+          "Selected: " + sourceFile.files[0].name;
 
-    result.hidden = false;
-    result.textContent = "Reading databases...";
+        inspectButton.disabled = !SQL;
 
-    try {
+      } else {
+
+        sourceStatus.textContent =
+          "No file selected.";
+
+        inspectButton.disabled = true;
+      }
+    });
+
+    // ------------------------------------
+    // TARGET FILE SELECTION
+    // ------------------------------------
+
+    targetFile.addEventListener("change", function () {
+
+      if (targetFile.files.length > 0) {
+
+        targetStatus.textContent =
+          "Selected: " + targetFile.files[0].name;
+
+      } else {
+
+        targetStatus.textContent =
+          "No target file selected.";
+      }
+    });
+
+    // ------------------------------------
+    // CLOSE OLD DATABASES
+    // ------------------------------------
+
+    function closeDatabases() {
+
       if (sourceDatabase) {
         sourceDatabase.close();
         sourceDatabase = null;
@@ -329,69 +125,570 @@ document.addEventListener("DOMContentLoaded", () => {
         targetDatabase.close();
         targetDatabase = null;
       }
+    }
 
-      const sourceBuffer =
-        await sourceFile.files[0].arrayBuffer();
+    // ------------------------------------
+    // READ DATABASE TABLES
+    // ------------------------------------
 
-      sourceDatabase = new SQL.Database(
-        new Uint8Array(sourceBuffer)
-      );
+    function getTables(database) {
 
-      sourceSchema = readSchema(sourceDatabase);
+      const query = `
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+        AND name NOT LIKE 'sqlite_%'
+        ORDER BY name
+      `;
 
-      let output = formatSchema(
-        sourceSchema,
-        "MYSWORD DATABASE"
-      );
+      const response = database.exec(query);
 
-      if (targetFile.files.length) {
-        const targetBuffer =
-          await targetFile.files[0].arrayBuffer();
-
-        targetDatabase = new SQL.Database(
-          new Uint8Array(targetBuffer)
-        );
-
-        targetSchema = readSchema(targetDatabase);
-
-        output += formatSchema(
-          targetSchema,
-          "MYBIBLE DATABASE"
-        );
-
-        const sourceContentTables =
-          findContentTables(sourceSchema);
-
-        const targetContentTables =
-          findContentTables(targetSchema);
-
-        output += "\n===== CONTENT TABLE ANALYSIS =====\n\n";
-
-        output += "MySword possible content tables:\n";
-
-        sourceContentTables.forEach((table) => {
-          output += `• ${table.name}\n`;
-        });
-
-        output += "\nMyBible possible content tables:\n";
-
-        targetContentTables.forEach((table) => {
-          output += `• ${table.name}\n`;
-        });
-
-        createMappingInterface();
-      } else {
-        output +=
-          "\nTarget file was not selected.\n";
-        output +=
-          "Select a MyBible SQLite3 file for mapping.";
+      if (!response.length) {
+        return [];
       }
 
-      result.textContent = output;
-
-    } catch (error) {
-      result.textContent =
-        "Database Error: " + error.message;
+      return response[0].values.map(function (row) {
+        return row[0];
+      });
     }
+
+    // ------------------------------------
+    // READ TABLE COLUMNS
+    // ------------------------------------
+
+    function getColumns(database, tableName) {
+
+      const safeTableName =
+        tableName.replace(/"/g, '""');
+
+      const query =
+        `PRAGMA table_info("${safeTableName}")`;
+
+      const response = database.exec(query);
+
+      if (!response.length) {
+        return [];
+      }
+
+      return response[0].values.map(function (column) {
+
+        return {
+          id: column[0],
+          name: column[1],
+          type: column[2] || "UNKNOWN",
+          notNull: column[3],
+          defaultValue: column[4],
+          primaryKey: column[5]
+        };
+
+      });
+    }
+
+    // ------------------------------------
+    // READ COMPLETE SCHEMA
+    // ------------------------------------
+
+    function readSchema(database) {
+
+      const tableNames = getTables(database);
+
+      return tableNames.map(function (tableName) {
+
+        return {
+          name: tableName,
+          columns: getColumns(database, tableName)
+        };
+
+      });
+    }
+
+    // ------------------------------------
+    // FORMAT DATABASE SCHEMA
+    // ------------------------------------
+
+    function formatSchema(schema, title, fileName) {
+
+      let output = "";
+
+      output += "\n====================================\n";
+      output += title + "\n";
+      output += "====================================\n\n";
+
+      output += "FILE: " + fileName + "\n\n";
+
+      if (!schema.length) {
+        output += "No tables found.\n";
+        return output;
+      }
+
+      output += "TOTAL TABLES: " + schema.length + "\n\n";
+
+      schema.forEach(function (table) {
+
+        output += "------------------------------------\n";
+        output += "TABLE: " + table.name + "\n";
+        output += "------------------------------------\n\n";
+
+        if (!table.columns.length) {
+          output += "No columns found.\n\n";
+          return;
+        }
+
+        table.columns.forEach(function (column) {
+
+          output += "Column Name: " + column.name + "\n";
+          output += "Data Type: " + column.type + "\n";
+          output += "Not Null: " + column.notNull + "\n";
+          output += "Primary Key: " + column.primaryKey + "\n";
+
+          output += "Default Value: " +
+            (
+              column.defaultValue === null
+                ? "NULL"
+                : column.defaultValue
+            ) + "\n";
+
+          output += "\n";
+        });
+
+        output += "\n";
+      });
+
+      return output;
+    }
+
+    // ------------------------------------
+    // FIND POSSIBLE CONTENT TABLES
+    // ------------------------------------
+
+    function findContentTables(schema) {
+
+      const keywords = [
+        "content",
+        "comment",
+        "commentary",
+        "text",
+        "topic",
+        "verse",
+        "bible",
+        "ref"
+      ];
+
+      return schema.filter(function (table) {
+
+        const tableName =
+          table.name.toLowerCase();
+
+        return keywords.some(function (keyword) {
+          return tableName.includes(keyword);
+        });
+
+      });
+    }
+
+    // ------------------------------------
+    // FIND POSSIBLE COLUMN MATCHES
+    // ------------------------------------
+
+    function findColumnMatches(
+      sourceTable,
+      targetTable
+    ) {
+
+      let output = "";
+
+      output += "\n====================================\n";
+      output += "SUGGESTED COLUMN MAPPING\n";
+      output += "====================================\n\n";
+
+      output += "SOURCE TABLE: " +
+        sourceTable.name + "\n";
+
+      output += "TARGET TABLE: " +
+        targetTable.name + "\n\n";
+
+      sourceTable.columns.forEach(function (sourceColumn) {
+
+        const sourceName =
+          sourceColumn.name.toLowerCase().trim();
+
+        const exactMatch =
+          targetTable.columns.find(function (targetColumn) {
+
+            return targetColumn.name
+              .toLowerCase()
+              .trim() === sourceName;
+
+          });
+
+        if (exactMatch) {
+
+          output +=
+            sourceColumn.name +
+            "  →  " +
+            exactMatch.name +
+            "  [MATCH]\n";
+
+        } else {
+
+          output +=
+            sourceColumn.name +
+            "  →  No automatic match\n";
+        }
+
+      });
+
+      return output;
+    }
+
+    // ------------------------------------
+    // CONTENT TABLE ANALYSIS
+    // ------------------------------------
+
+    function formatContentAnalysis(
+      sourceContentTables,
+      targetContentTables
+    ) {
+
+      let output = "";
+
+      output += "\n====================================\n";
+      output += "CONTENT TABLE ANALYSIS\n";
+      output += "====================================\n\n";
+
+      output += "MySword Possible Content Tables:\n\n";
+
+      if (!sourceContentTables.length) {
+
+        output += "No possible content tables found.\n";
+
+      } else {
+
+        sourceContentTables.forEach(function (table) {
+
+          output += "• " + table.name + "\n";
+
+        });
+      }
+
+      output += "\nMyBible Possible Content Tables:\n\n";
+
+      if (!targetContentTables.length) {
+
+        output += "No possible content tables found.\n";
+
+      } else {
+
+        targetContentTables.forEach(function (table) {
+
+          output += "• " + table.name + "\n";
+
+        });
+      }
+
+      return output;
+    }
+
+    // ------------------------------------
+    // CREATE MAPPING USER INTERFACE
+    // ------------------------------------
+
+    function createMappingInterface() {
+
+      const oldArea =
+        document.getElementById("mappingArea");
+
+      if (oldArea) {
+        oldArea.remove();
+      }
+
+      if (
+        !sourceSchema.length ||
+        !targetSchema.length
+      ) {
+        return;
+      }
+
+      const area =
+        document.createElement("div");
+
+      area.id = "mappingArea";
+
+      area.style.marginTop = "20px";
+      area.style.padding = "20px";
+      area.style.background = "#eff6ff";
+      area.style.border = "1px solid #93c5fd";
+      area.style.borderRadius = "10px";
+
+      const heading =
+        document.createElement("h3");
+
+      heading.textContent =
+        "Column Mapping Preview";
+
+      heading.style.color = "#1e3a8a";
+
+      area.appendChild(heading);
+
+      const description =
+        document.createElement("p");
+
+      description.textContent =
+        "Select source and target tables to compare columns.";
+
+      area.appendChild(description);
+
+      // Source selector
+      const sourceLabel =
+        document.createElement("label");
+
+      sourceLabel.textContent =
+        "MySword Source Table";
+
+      sourceLabel.style.display = "block";
+      sourceLabel.style.marginTop = "12px";
+
+      const sourceSelect =
+        document.createElement("select");
+
+      sourceSelect.id = "sourceTableSelect";
+      sourceSelect.style.width = "100%";
+      sourceSelect.style.padding = "10px";
+
+      sourceSchema.forEach(function (table) {
+
+        const option =
+          document.createElement("option");
+
+        option.value = table.name;
+        option.textContent = table.name;
+
+        sourceSelect.appendChild(option);
+      });
+
+      area.appendChild(sourceLabel);
+      area.appendChild(sourceSelect);
+
+      // Target selector
+      const targetLabel =
+        document.createElement("label");
+
+      targetLabel.textContent =
+        "MyBible Target Table";
+
+      targetLabel.style.display = "block";
+      targetLabel.style.marginTop = "15px";
+
+      const targetSelect =
+        document.createElement("select");
+
+      targetSelect.id = "targetTableSelect";
+      targetSelect.style.width = "100%";
+      targetSelect.style.padding = "10px";
+
+      targetSchema.forEach(function (table) {
+
+        const option =
+          document.createElement("option");
+
+        option.value = table.name;
+        option.textContent = table.name;
+
+        targetSelect.appendChild(option);
+      });
+
+      area.appendChild(targetLabel);
+      area.appendChild(targetSelect);
+
+      const mappingOutput =
+        document.createElement("pre");
+
+      mappingOutput.id = "mappingOutput";
+
+      mappingOutput.style.marginTop = "20px";
+      mappingOutput.style.padding = "15px";
+      mappingOutput.style.background = "#ffffff";
+      mappingOutput.style.borderRadius = "8px";
+      mappingOutput.style.whiteSpace = "pre-wrap";
+      mappingOutput.style.overflowWrap = "anywhere";
+
+      area.appendChild(mappingOutput);
+
+      function updateMapping() {
+
+        const selectedSource =
+          sourceSchema.find(function (table) {
+
+            return table.name === sourceSelect.value;
+
+          });
+
+        const selectedTarget =
+          targetSchema.find(function (table) {
+
+            return table.name === targetSelect.value;
+
+          });
+
+        if (!selectedSource || !selectedTarget) {
+
+          mappingOutput.textContent =
+            "Please select valid tables.";
+
+          return;
+        }
+
+        mappingOutput.textContent =
+          findColumnMatches(
+            selectedSource,
+            selectedTarget
+          );
+      }
+
+      sourceSelect.addEventListener(
+        "change",
+        updateMapping
+      );
+
+      targetSelect.addEventListener(
+        "change",
+        updateMapping
+      );
+
+      result.parentNode.appendChild(area);
+
+      updateMapping();
+    }
+
+    // ------------------------------------
+    // INSPECT DATABASES
+    // ------------------------------------
+
+    inspectButton.addEventListener(
+      "click",
+      async function () {
+
+        if (!SQL) {
+
+          result.hidden = false;
+
+          result.textContent =
+            "SQLite library is still loading.\n" +
+            "Please wait and try again.";
+
+          return;
+        }
+
+        if (!sourceFile.files.length) {
+
+          result.hidden = false;
+
+          result.textContent =
+            "Please select a MySword file.";
+
+          return;
+        }
+
+        result.hidden = false;
+
+        result.textContent =
+          "Reading database structure...\n" +
+          "Please wait...";
+
+        try {
+
+          closeDatabases();
+
+          const sourceBuffer =
+            await sourceFile.files[0].arrayBuffer();
+
+          sourceDatabase =
+            new SQL.Database(
+              new Uint8Array(sourceBuffer)
+            );
+
+          sourceSchema =
+            readSchema(sourceDatabase);
+
+          const sourceFileName =
+            sourceFile.files[0].name;
+
+          let output =
+            formatSchema(
+              sourceSchema,
+              "MYSWORD DATABASE",
+              sourceFileName
+            );
+
+          if (targetFile.files.length) {
+
+            const targetBuffer =
+              await targetFile.files[0].arrayBuffer();
+
+            targetDatabase =
+              new SQL.Database(
+                new Uint8Array(targetBuffer)
+              );
+
+            targetSchema =
+              readSchema(targetDatabase);
+
+            const targetFileName =
+              targetFile.files[0].name;
+
+            output +=
+              formatSchema(
+                targetSchema,
+                "MYBIBLE DATABASE",
+                targetFileName
+              );
+
+            const sourceContentTables =
+              findContentTables(sourceSchema);
+
+            const targetContentTables =
+              findContentTables(targetSchema);
+
+            output +=
+              formatContentAnalysis(
+                sourceContentTables,
+                targetContentTables
+              );
+
+            createMappingInterface();
+
+          } else {
+
+            output +=
+              "\n====================================\n";
+
+            output +=
+              "TARGET FILE NOT SELECTED\n";
+
+            output +=
+              "====================================\n\n";
+
+            output +=
+              "Please select a MyBible SQLite3 file\n" +
+              "to compare both database schemas.\n";
+          }
+
+          result.textContent = output;
+
+        } catch (error) {
+
+          result.hidden = false;
+
+          result.textContent =
+            "DATABASE ERROR:\n\n" +
+            error.message;
+
+          console.error(error);
+        }
+
+      }
+    );
+
   });
-});
+
+})();
